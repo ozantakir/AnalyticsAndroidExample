@@ -58,3 +58,8 @@
 - **Target Abstraction:** Every event model must explicitly define its destination targets using the `AnalyticsDestination` enum (e.g., `FIREBASE`, `ADJUST`, `INSIDER`, `FACEBOOK`).
 - **Dynamic Parameter Mapping:** `EventModel` classes must handle custom payload transformations per destination inside `getMappedParameters(destination: AnalyticsDestination)`.
 - **Native Method Dispatching:** If a target requires a native SDK method call (e.g., Insider's `cart.add()`, Facebook's `logPurchase()`) instead of a generic key-value log, `AnalyticsTracker` must evaluate action keys (e.g., `__action_type`) and dispatch to the corresponding native SDK method.
+
+## Analytics Model & Parameter Mapping Standards
+- **Raw Base Parameters (`parameters`):** Every `EventModel` maintains a base `parameters` map containing the exact schema properties. This serves as the raw, unmapped payload (ideal for internal debugging, Logcat, and Crashlytics logs).
+- **Destination-Specific Mapping:** Explicit mapping branches inside `getMappedParameters(destination)` are used ONLY for SDKs that require specific parameter names or structures (e.g., Firebase requiring `item_id` instead of `productId`, or Adjust requiring `revenue`).
+- **Fallback Rule:** `getMappedParameters()` must always end with `else -> parameters`. SDKs that accept standard schema keys without custom transformations will automatically consume this base map without extra code overhead.

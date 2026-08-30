@@ -1,17 +1,22 @@
-*.iml
-.gradle
-/local.properties
-/.idea/workspace.xml
-/.idea/repositories.xml
-/.idea/compiler.xml
-/.idea/modules.xml
-/.idea/tasks.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+# Built application files & Module Build Directories
+**/build/
+build/
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Android Studio / IntelliJ IDEA Files
 .idea/
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+*.iml
+.gradle/
 local.properties
+
+# Native / C++ Builds
+.externalNativeBuild
+.cxx/
+/captures
+
+# OS Specific Files
+.DS_Store
+Thumbs.db

@@ -1,6 +1,6 @@
 ### Skill: /generate-analytics-binding
 
-**Goal:** Safely integrate analytics tracking calls into ViewModels, UseCases, or Jetpack Compose UI components using `:core:analytics` module events and `AnalyticsTracker`, supporting multiple destinations (Firebase, Adjust, Insider, etc.) and native SDK action dispatching.
+**Goal:** Safely integrate analytics tracking calls into ViewModels, UseCases, or Jetpack Compose UI components using `:core:analytics` module events and `AnalyticsTracker`, supporting multiple destinations (Firebase, Adjust, Insider, etc.), base parameter fallbacks, and native SDK action dispatching.
 
 ---
 
@@ -15,7 +15,9 @@
     - **State-Driven Events (Success/Failure):** Trigger inside ViewModel coroutine flows when a state transition succeeds or fails.
 3. **Multi-Destination & Action Handling:**
     - **Target Routing:** Events must explicitly list their targets using `AnalyticsDestination` (e.g., `FIREBASE`, `ADJUST`, `INSIDER`, `FACEBOOK`).
-    - **Custom Parameter Mapping:** `EventModel` classes must handle payload transformations per target inside `getMappedParameters(destination: AnalyticsDestination)`.
+    - **Base Parameter Map (`parameters`):** Store raw schema key-value pairs in `override val parameters: Map<String, Any?>`. Use this as the base payload for internal logging (Logcat, Crashlytics) or for SDKs that accept raw schema parameters without renaming.
+    - **SDK-Specific Parameter Mapping:** Define explicit `when` branches inside `getMappedParameters()` only for SDKs requiring rigid key conventions (e.g., Firebase `item_id`, Adjust `revenue`).
+    - **Fallback Mechanism:** `getMappedParameters()` must always end with `else -> parameters` so SDKs without custom transformation rules automatically receive the base parameter map.
     - **Native Action Keys:** If a target requires a strongly-typed native method call (e.g., Insider's `cart.add()`, Facebook's `logPurchase()`), pass internal action flags (e.g., `"__action_type" to "CART_ADD"`) so `AnalyticsTracker` can invoke the native SDK method.
 4. **Thread Safety:** Analytics tracking calls must be non-blocking and safe to call on any thread or coroutine context.
 
@@ -26,16 +28,16 @@
 #### 1. Multi-Target Event Class Structure (`:core:analytics`)
 
 ```kotlin
-package com.example.project.core.analytics.events
+package com.example.core.analytics.generated
 
-import com.example.project.core.analytics.model.AnalyticsDestination
-import com.example.project.core.analytics.model.EventModel
+import com.example.core.analytics.AnalyticsDestination
+import com.example.core.analytics.EventModel
 
 data class AddToCartClickedEvent(
     val productId: String,
     val price: Double,
     val quantity: Int,
-    val name: String
+    val category: String? = null
 ) : EventModel() {
 
     override val eventName: String = "add_to_cart_clicked"
@@ -47,15 +49,24 @@ data class AddToCartClickedEvent(
         AnalyticsDestination.INSIDER
     )
 
+    // Base Raw Schema Parameters (Used for internal logging or SDKs without custom key mapping)
+    override val parameters: Map<String, Any?> = mapOf(
+        "productId" to productId,
+        "price" to price,
+        "quantity" to quantity,
+        "category" to category
+    )
+
     override fun getMappedParameters(destination: AnalyticsDestination): Map<String, Any?> {
         return when (destination) {
+            // SDKs requiring custom key transformations
             AnalyticsDestination.FIREBASE -> mapOf(
                 "item_id" to productId,
                 "value" to price,
-                "quantity" to quantity
+                "quantity" to quantity,
+                "item_category" to category
             )
             AnalyticsDestination.ADJUST -> mapOf(
-                "event_token" to "cart_add_token_123",
                 "revenue" to price
             )
             AnalyticsDestination.INSIDER -> mapOf(
@@ -63,10 +74,10 @@ data class AddToCartClickedEvent(
                 "__action_type" to "CART_ADD",
                 "product_id" to productId,
                 "price" to price,
-                "quantity" to quantity,
-                "name" to name
+                "quantity" to quantity
             )
-            else -> emptyMap()
+            // SDKs accepting raw schema keys fall back to standard parameters
+            else -> parameters
         }
     }
 }
