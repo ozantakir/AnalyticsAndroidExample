@@ -6,5 +6,6 @@ enum class AnalyticsDestination {
     ADJUST,
     INSIDER,
     FACEBOOK,
-    MIXPANEL
+    MIXPANEL,
+    SGTM
 }

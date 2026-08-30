@@ -3,8 +3,7 @@ package com.example.feature.product.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.core.analytics.AnalyticsTracker
-import com.example.core.analytics.ProductViewEvent
-import com.example.core.analytics.AddToCartEvent
+import com.example.core.analytics.generated.AddToCartClickedEvent
 import com.example.core.domain.model.Product
 import com.example.core.domain.usecase.GetProductUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -40,21 +39,16 @@ class ProductViewModel @Inject constructor(
     }
 
     private fun trackProductView(product: Product) {
-        analyticsTracker.track(
-            ProductViewEvent(
-                productId = product.id,
-                productName = product.name
-            )
-        )
+        // ProductViewEvent generated olduğunda burası güncellenecek
     }
 
     fun onAddToCartClicked(product: Product) {
         // Handle add to cart logic
         analyticsTracker.track(
-            AddToCartEvent(
+            AddToCartClickedEvent(
                 productId = product.id,
-                productName = product.name,
-                price = product.price
+                price = product.price,
+                quantity = 1
             )
         )
     }
