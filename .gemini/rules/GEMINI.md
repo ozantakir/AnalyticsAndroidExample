@@ -63,3 +63,8 @@
 - **Raw Base Parameters (`parameters`):** Every `EventModel` maintains a base `parameters` map containing the exact schema properties. This serves as the raw, unmapped payload (ideal for internal debugging, Logcat, and Crashlytics logs).
 - **Destination-Specific Mapping:** Explicit mapping branches inside `getMappedParameters(destination)` are used ONLY for SDKs that require specific parameter names or structures (e.g., Firebase requiring `item_id` instead of `productId`, or Adjust requiring `revenue`).
 - **Fallback Rule:** `getMappedParameters()` must always end with `else -> parameters`. SDKs that accept standard schema keys without custom transformations will automatically consume this base map without extra code overhead.
+
+## Global & Common Analytics Parameters
+- **Global Parameters Isolation:** Common/global parameters (e.g., `device_id`, `language`) must NEVER be declared inside individual JSON schemas or `EventModel` classes.
+- **Tracker Level Injection:** Global parameters are injected centrally at startup via `AnalyticsTracker.setGlobalParameterProvider { ... }` and merged automatically with event-specific payloads during `AnalyticsTracker.track()`.
+- **Target-Specific Context Parameters:** Destination-specific environment variables (e.g., `device_id` for Firebase, `locale` for Insider, `network_type` for Custom Collectors) must NOT be declared inside event schemas or UI callers. They must be resolved dynamically at the `AnalyticsTracker` layer during dispatching based on the active `AnalyticsDestination`.
