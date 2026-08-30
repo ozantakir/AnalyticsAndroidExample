@@ -14,7 +14,7 @@ data class AddToCartClickedEvent(
     override val eventName: String = "add_to_cart_clicked"
 
     override val destinations: List<AnalyticsDestination> = listOf(
-        AnalyticsDestination.FIREBASE, AnalyticsDestination.ADJUST, AnalyticsDestination.SGTM
+        AnalyticsDestination.FIREBASE, AnalyticsDestination.ADJUST, AnalyticsDestination.INSIDER
     )
 
     override val parameters: Map<String, Any?> = mapOf(
@@ -35,7 +35,7 @@ data class AddToCartClickedEvent(
         AnalyticsDestination.ADJUST -> mapOf(
             "revenue" to price
         )
-        AnalyticsDestination.SGTM -> mapOf(
+        AnalyticsDestination.INSIDER -> mapOf(
             "product_id" to productId,
             "price" to price,
             "quantity" to quantity,
