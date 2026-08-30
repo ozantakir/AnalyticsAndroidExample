@@ -1,0 +1,61 @@
+package com.example.feature.product.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.core.analytics.AnalyticsTracker
+import com.example.core.analytics.ProductViewEvent
+import com.example.core.analytics.AddToCartEvent
+import com.example.core.domain.model.Product
+import com.example.core.domain.usecase.GetProductUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+sealed interface ProductUiState {
+    data object Loading : ProductUiState
+    data class Success(val product: Product) : ProductUiState
+    data class Error(val message: String) : ProductUiState
+}
+
+@HiltViewModel
+class ProductViewModel @Inject constructor(
+    private val getProductUseCase: GetProductUseCase,
+    private val analyticsTracker: AnalyticsTracker
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow<ProductUiState>(ProductUiState.Loading)
+    val uiState: StateFlow<ProductUiState> = _uiState.asStateFlow()
+
+    fun loadProduct(productId: String) {
+        viewModelScope.launch {
+            getProductUseCase(productId)
+                .onStart { _uiState.value = ProductUiState.Loading }
+                .catch { e -> _uiState.value = ProductUiState.Error(e.message ?: "Unknown Error") }
+                .collect { product ->
+                    _uiState.value = ProductUiState.Success(product)
+                    trackProductView(product)
+                }
+        }
+    }
+
+    private fun trackProductView(product: Product) {
+        analyticsTracker.track(
+            ProductViewEvent(
+                productId = product.id,
+                productName = product.name
+            )
+        )
+    }
+
+    fun onAddToCartClicked(product: Product) {
+        // Handle add to cart logic
+        analyticsTracker.track(
+            AddToCartEvent(
+                productId = product.id,
+                productName = product.name,
+                price = product.price
+            )
+        )
+    }
+}

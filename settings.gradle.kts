@@ -24,5 +24,9 @@ dependencyResolutionManagement {
 
 rootProject.name = "AnalyticsAndroidExample"
 include(":app")
-include(":analytics")
- 
+include(":core:analytics")
+include(":core:domain")
+include(":core:data")
+include(":core:network")
+include(":core:designsystem")
+include(":feature:product")
