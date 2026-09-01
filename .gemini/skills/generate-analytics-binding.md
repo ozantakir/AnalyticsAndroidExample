@@ -84,3 +84,24 @@ data class AddToCartClickedEvent(
         }
     }
 }
+
+#### 2. Usage Examples in UI Layer
+
+// Compose Screen Impression
+@Composable
+fun ProductDetailScreen(...) {
+    LaunchedEffect(Unit) {
+        AnalyticsTracker.track(ProductDetailScreenViewedEvent())
+    }
+}
+
+// ViewModel Action Trigger
+fun onAddToCartClicked(product: Product) {
+    AnalyticsTracker.track(
+        AddToCartClickedEvent(
+            productId = product.id,
+            price = product.price,
+            quantity = 1
+        )
+    )
+}

@@ -1,0 +1,68 @@
+name: Auto Analytics Binding Agent (Gemini)
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - 'core/analytics/src/main/java/**/generated/**'
+
+jobs:
+  auto-bind:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Gemini CLI
+        run: npm install -g @google/genai
+
+      - name: Run Auto-Binding AI Agent (Gemini 1.5 Pro)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # 1. PR ile 'generated' dizinine eklenen yeni Event sınıflarını tespit et
+          CHANGED_EVENTS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep 'generated/' || true)
+          
+          if [ -z "$CHANGED_EVENTS" ]; then
+            echo "Yeni eklenen analitik eventi bulunamadı."
+            exit 0
+          fi
+          
+          echo "Binding yapılacak eventler: $CHANGED_EVENTS"
+
+          # 2. Gemini CLI aracılığıyla projeyi taratıp binding kodunu inject ettir
+          gemini run --model gemini-1.5-pro "
+          You are an automated Android Analytics Integrator.
+          Newly generated events in this PR:
+          $CHANGED_EVENTS
+
+          Tasks:
+          1. Read and apply the rules in '.claude/skills/generate-analytics-binding.md' (or '.gemini/skills/generate-analytics-binding.md').
+          2. Inspect the parameters and event intent of the newly added event class(es).
+          3. Locate the corresponding ViewModel, UseCase, or Compose UI file in feature modules (e.g., if AddToCartClickedEvent was added, locate ProductDetailViewModel.kt or ProductDetailScreen.kt).
+          4. Inject 'AnalyticsTracker.track(GeneratedEvent(...))' correctly into the target function or click lambda following the architectural guidelines.
+          "
+
+      - name: Commit & Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if ! git diff-index --quiet HEAD; then
+            git commit -m "chore(analytics): auto-bind generated events via Gemini Agent"
+            git push
+          else
+            echo "Değişiklik gerekmedi."
+          fi
