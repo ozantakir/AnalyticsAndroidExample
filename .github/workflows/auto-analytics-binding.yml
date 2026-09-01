@@ -8,6 +8,8 @@ on:
 
 jobs:
   auto-bind:
+    # Bot'un kendi attığı commit'lerde tetiklenmeyi engelleyerek kısırdöngüyü kırar
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -30,7 +32,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install google-genai
 
-      - name: Run Auto-Binding AI Agent (Gemini)
+      - name: Run Auto-Binding AI Agent
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
@@ -55,10 +57,10 @@ jobs:
 
           client = genai.Client(api_key=api_key)
 
-          # 1. Skill kurallarını oku
+          # 1. Skill kurallarını .gemini dizininden oku
           skill_path = '.gemini/skills/generate-analytics-binding.md'
           if not os.path.exists(skill_path):
-              skill_path = '.gemini/skills/generate-analytics-binding.md'
+              skill_path = '.claude/skills/generate-analytics-binding.md'
 
           skill_rules = ""
           if os.path.exists(skill_path):
@@ -73,13 +75,13 @@ jobs:
                   with open(file_path, 'r', encoding='utf-8') as f:
                       events_content += f"\n--- File: {file_path} ---\n" + f.read()
 
-          # 3. Projedeki ViewModel ve Screen dosyalarını tara
+          # 3. Projedeki ilgili ViewModel ve UI dosyalarını tara
           candidate_files = []
           for ext in ('**/*ViewModel.kt', '**/*Screen.kt'):
               candidate_files.extend(glob.glob(ext, recursive=True))
 
           codebase_context = ""
-          for c_file in candidate_files[:10]: # İlk 10 ilgili dosyayı context olarak ekle
+          for c_file in candidate_files[:10]:
               with open(c_file, 'r', encoding='utf-8') as f:
                   codebase_context += f"\n--- Target Candidate File: {c_file} ---\n" + f.read()
 
@@ -133,7 +135,8 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add .
           if ! git diff-index --quiet HEAD; then
-            git commit -m "chore(analytics): auto-bind generated events via Gemini Agent"
+            # [skip ci] etiketi tekrar workflow tetiklenmesini kesin olarak engeller
+            git commit -m "chore(analytics): auto-bind generated events via Gemini Agent [skip ci]"
             git push
           else
             echo "Değişiklik yapılmadı veya gerek görülmedi."
