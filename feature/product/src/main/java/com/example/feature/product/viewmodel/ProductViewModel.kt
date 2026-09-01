@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.core.analytics.AnalyticsTracker
 import com.example.core.analytics.generated.AddToCartClickedEvent
+import com.example.core.analytics.generated.ProductViewEvent
 import com.example.core.domain.model.Product
 import com.example.core.domain.usecase.GetProductUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -39,7 +40,11 @@ class ProductViewModel @Inject constructor(
     }
 
     private fun trackProductView(product: Product) {
-        // ProductViewEvent generated olduğunda burası güncellenecek
+        analyticsTracker.track(
+            ProductViewEvent(
+                productId = product.id
+            )
+        )
     }
 
     fun onAddToCartClicked(product: Product) {
