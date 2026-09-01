@@ -10,12 +10,14 @@ interface AnalyticsTracker {
     fun track(event: EventModel)
     
     /**
-     * Birden fazla dinamik veri sağlayıcıyı (Auth state, Config vb.) enjekte etmek için kullanılır.
+     * Injects multiple dynamic data providers (Auth state, Config, etc.).
+     * Follows Skill Rule 4 from generate-analytics-binding.md.
      */
     fun setProviders(vararg providers: () -> Map<String, Any?>)
 
     /**
-     * Mevcut global parametreleri çalışma zamanında güncellemek/eklemek için kullanılır.
+     * Updates/adds to the current global parameters at runtime.
+     * Useful for setting user_id after login.
      */
     fun updateGlobalParameters(params: Map<String, Any?>)
 }
@@ -38,7 +40,7 @@ class AnalyticsTrackerImpl @Inject constructor(
     }
 
     override fun track(event: EventModel) {
-        // 1. Tüm global verileri birleştir (Statik Map + Dinamik Provider'lar)
+        // 1. Merge all global data (Static Map + Dynamic Providers)
         val combinedGlobalParams = mutableMapOf<String, Any?>().apply {
             putAll(globalParameters)
             providers.forEach { provider -> putAll(provider()) }
@@ -54,7 +56,7 @@ class AnalyticsTrackerImpl @Inject constructor(
             val eventParams = event.getMappedParameters(destination)
             val contextParams = resolveContextParameters(destination)
 
-            // 2. Hiyerarşik Birleştirme: Global + Event + Context
+            // 2. Hierarchical Merge: Global + Event + Context
             val finalParams = combinedGlobalParams + eventParams + contextParams
 
             if (finalParams.containsKey("__action_type")) {
@@ -65,6 +67,10 @@ class AnalyticsTrackerImpl @Inject constructor(
         }
     }
 
+    /**
+     * Resolves target-specific dynamic values according to GEMINI.md.
+     * These values are NOT defined inside the EventModel.
+     */
     private fun resolveContextParameters(destination: AnalyticsDestination): Map<String, Any?> {
         return when (destination) {
             AnalyticsDestination.FIREBASE -> mapOf(
@@ -79,11 +85,13 @@ class AnalyticsTrackerImpl @Inject constructor(
     }
 
     private fun logToGenericSdk(destination: AnalyticsDestination, eventName: String, params: Map<String, Any?>) {
+        // In real implementation, call specific SDKs: FirebaseAnalytics.getInstance().logEvent(...)
         Log.d("AnalyticsTracker", "[$destination] Event: $eventName | Params: $params")
     }
 
     private fun dispatchNativeAction(destination: AnalyticsDestination, eventName: String, params: Map<String, Any?>) {
         val actionType = params["__action_type"]
+        // In real implementation, call specific native methods: Insider.Instance.itemAddedToCart(...)
         Log.d("AnalyticsTracker", "[$destination] Native Action ($actionType): $eventName | Params: $params")
     }
 }

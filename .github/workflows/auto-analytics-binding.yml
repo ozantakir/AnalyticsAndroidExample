@@ -8,7 +8,7 @@ on:
 
 jobs:
   auto-bind:
-    # Bot'un kendi attığı commit'lerde tetiklenmeyi engelleyerek kısırdöngüyü kırar
+    # Break the cycle by preventing triggering on the bot's own commits
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
@@ -39,11 +39,11 @@ jobs:
           CHANGED_EVENTS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep 'generated/' || true)
           
           if [ -z "$CHANGED_EVENTS" ]; then
-            echo "Yeni eklenen analitik eventi bulunamadı."
+            echo "No new analytics event found."
             exit 0
           fi
           
-          echo "Binding yapılacak eventler:"
+          echo "Events to be bound:"
           echo "$CHANGED_EVENTS"
 
           python - <<EOF
@@ -53,11 +53,11 @@ jobs:
 
           api_key = os.environ.get("GEMINI_API_KEY")
           if not api_key:
-              raise ValueError("GEMINI_API_KEY secret bulunamadı!")
+              raise ValueError("GEMINI_API_KEY secret not found!")
 
           client = genai.Client(api_key=api_key)
 
-          # 1. Skill kurallarını .gemini dizininden oku
+          # 1. Read skill rules from .gemini directory
           skill_path = '.gemini/skills/generate-analytics-binding.md'
           if not os.path.exists(skill_path):
               skill_path = '.claude/skills/generate-analytics-binding.md'
@@ -67,7 +67,7 @@ jobs:
               with open(skill_path, 'r', encoding='utf-8') as f:
                   skill_rules = f.read()
 
-          # 2. Yeni eklenen event içeriğini oku
+          # 2. Read newly added event content
           changed_events_files = """${CHANGED_EVENTS}""".strip().split('\n')
           events_content = ""
           for file_path in changed_events_files:
@@ -75,7 +75,7 @@ jobs:
                   with open(file_path, 'r', encoding='utf-8') as f:
                       events_content += f"\n--- File: {file_path} ---\n" + f.read()
 
-          # 3. Projedeki ilgili ViewModel ve UI dosyalarını tara
+          # 3. Scan relevant ViewModel and UI files in the project
           candidate_files = []
           for ext in ('**/*ViewModel.kt', '**/*Screen.kt'):
               candidate_files.extend(glob.glob(ext, recursive=True))
@@ -107,7 +107,7 @@ jobs:
           """
 
           response = client.models.generate_content(
-              model='gemini-3.6-flash',
+              model='gemini-2.0-flash',
               contents=prompt,
           )
           
@@ -121,12 +121,12 @@ jobs:
               if target_path and updated_code and os.path.exists(target_path):
                   with open(target_path, 'w', encoding='utf-8') as f:
                       f.write(updated_code)
-                  print(f"Başarıyla güncellendi: {target_path}")
+                  print(f"Successfully updated: {target_path}")
               else:
-                  print("Geçerli bir hedef dosya veya kod üretilemedi.")
+                  print("Could not generate a valid target file or code.")
           except Exception as e:
-              print(f"JSON Parsing hatası veya dosya yazma başarısız: {e}")
-              print("Gemini Yanıtı:", response.text)
+              print(f"JSON Parsing error or file write failed: {e}")
+              print("Gemini Response:", response.text)
           EOF
 
       - name: Commit & Push Changes
@@ -135,9 +135,9 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add .
           if ! git diff-index --quiet HEAD; then
-            # [skip ci] etiketi tekrar workflow tetiklenmesini kesin olarak engeller
+            # [skip ci] tag prevents workflow from being re-triggered
             git commit -m "chore(analytics): auto-bind generated events via Gemini Agent [skip ci]"
             git push
           else
-            echo "Değişiklik yapılmadı veya gerek görülmedi."
+            echo "No changes made or needed."
           fi
