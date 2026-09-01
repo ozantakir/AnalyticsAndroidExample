@@ -20,8 +20,7 @@ sealed interface ProductUiState {
 
 @HiltViewModel
 class ProductViewModel @Inject constructor(
-    private val getProductUseCase: GetProductUseCase,
-    private val analyticsTracker: AnalyticsTracker
+    private val getProductUseCase: GetProductUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ProductUiState>(ProductUiState.Loading)
@@ -40,7 +39,7 @@ class ProductViewModel @Inject constructor(
     }
 
     private fun trackProductView(product: Product) {
-        analyticsTracker.track(
+        AnalyticsTracker.track(
             ProductViewEvent(
                 productId = product.id
             )
@@ -49,7 +48,7 @@ class ProductViewModel @Inject constructor(
 
     fun onAddToCartClicked(product: Product) {
         // Handle add to cart logic
-        analyticsTracker.track(
+        AnalyticsTracker.track(
             AddToCartClickedEvent(
                 productId = product.id,
                 price = product.price,
