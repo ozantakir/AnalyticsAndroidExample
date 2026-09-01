@@ -20,19 +20,20 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          node-version: '20'
+          python-version: '3.10'
 
-      - name: Install Gemini CLI
-        run: npm install -g @google/genai
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-genai
 
-      - name: Run Auto-Binding AI Agent (Gemini 1.5 Pro)
+      - name: Run Auto-Binding AI Agent (Gemini)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          # 1. PR ile 'generated' dizinine eklenen yeni Event sınıflarını tespit et
           CHANGED_EVENTS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep 'generated/' || true)
           
           if [ -z "$CHANGED_EVENTS" ]; then
@@ -40,20 +41,91 @@ jobs:
             exit 0
           fi
           
-          echo "Binding yapılacak eventler: $CHANGED_EVENTS"
+          echo "Binding yapılacak eventler:"
+          echo "$CHANGED_EVENTS"
 
-          # 2. Gemini CLI aracılığıyla projeyi taratıp binding kodunu inject ettir
-          gemini run --model gemini-1.5-pro "
+          python - <<EOF
+          import os
+          import glob
+          from google import genai
+
+          api_key = os.environ.get("GEMINI_API_KEY")
+          if not api_key:
+              raise ValueError("GEMINI_API_KEY secret bulunamadı!")
+
+          client = genai.Client(api_key=api_key)
+
+          # 1. Skill kurallarını oku
+          skill_path = '.gemini/skills/generate-analytics-binding.md'
+          if not os.path.exists(skill_path):
+              skill_path = '.gemini/skills/generate-analytics-binding.md'
+
+          skill_rules = ""
+          if os.path.exists(skill_path):
+              with open(skill_path, 'r', encoding='utf-8') as f:
+                  skill_rules = f.read()
+
+          # 2. Yeni eklenen event içeriğini oku
+          changed_events_files = """${CHANGED_EVENTS}""".strip().split('\n')
+          events_content = ""
+          for file_path in changed_events_files:
+              if os.path.exists(file_path):
+                  with open(file_path, 'r', encoding='utf-8') as f:
+                      events_content += f"\n--- File: {file_path} ---\n" + f.read()
+
+          # 3. Projedeki ViewModel ve Screen dosyalarını tara
+          candidate_files = []
+          for ext in ('**/*ViewModel.kt', '**/*Screen.kt'):
+              candidate_files.extend(glob.glob(ext, recursive=True))
+
+          codebase_context = ""
+          for c_file in candidate_files[:10]: # İlk 10 ilgili dosyayı context olarak ekle
+              with open(c_file, 'r', encoding='utf-8') as f:
+                  codebase_context += f"\n--- Target Candidate File: {c_file} ---\n" + f.read()
+
+          prompt = f"""
           You are an automated Android Analytics Integrator.
-          Newly generated events in this PR:
-          $CHANGED_EVENTS
+          
+          Skill Rules:
+          {skill_rules}
+
+          Newly Added Event Models:
+          {events_content}
+
+          Target Codebase Context:
+          {codebase_context}
 
           Tasks:
-          1. Read and apply the rules in '.claude/skills/generate-analytics-binding.md' (or '.gemini/skills/generate-analytics-binding.md').
-          2. Inspect the parameters and event intent of the newly added event class(es).
-          3. Locate the corresponding ViewModel, UseCase, or Compose UI file in feature modules (e.g., if AddToCartClickedEvent was added, locate ProductDetailViewModel.kt or ProductDetailScreen.kt).
-          4. Inject 'AnalyticsTracker.track(GeneratedEvent(...))' correctly into the target function or click lambda following the architectural guidelines.
-          "
+          1. Identify which Target Candidate File should contain the tracking call for the new Event Model.
+          2. Return ONLY a valid JSON object matching this structure (no markdown fences, raw text only):
+          {{
+            "file_path": "path/to/target/File.kt",
+            "updated_content": "COMPLETE_UPDATED_FILE_CONTENT_HERE"
+          }}
+          """
+
+          response = client.models.generate_content(
+              model='gemini-3.6-flash',
+              contents=prompt,
+          )
+          
+          import json
+          try:
+              raw_text = response.text.strip().removeprefix("```json").removesuffix("```").strip()
+              result = json.loads(raw_text)
+              target_path = result.get("file_path")
+              updated_code = result.get("updated_content")
+
+              if target_path and updated_code and os.path.exists(target_path):
+                  with open(target_path, 'w', encoding='utf-8') as f:
+                      f.write(updated_code)
+                  print(f"Başarıyla güncellendi: {target_path}")
+              else:
+                  print("Geçerli bir hedef dosya veya kod üretilemedi.")
+          except Exception as e:
+              print(f"JSON Parsing hatası veya dosya yazma başarısız: {e}")
+              print("Gemini Yanıtı:", response.text)
+          EOF
 
       - name: Commit & Push Changes
         run: |
@@ -64,5 +136,5 @@ jobs:
             git commit -m "chore(analytics): auto-bind generated events via Gemini Agent"
             git push
           else
-            echo "Değişiklik gerekmedi."
+            echo "Değişiklik yapılmadı veya gerek görülmedi."
           fi
