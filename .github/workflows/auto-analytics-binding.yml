@@ -81,6 +81,13 @@ jobs:
               candidate_files.extend(glob.glob(ext, recursive=True))
 
           codebase_context = ""
+          
+          # Add AnalyticsKeys as reference for better accuracy
+          keys_path = 'core/analytics/src/main/java/com/example/core/analytics/AnalyticsKeys.kt'
+          if os.path.exists(keys_path):
+              with open(keys_path, 'r', encoding='utf-8') as f:
+                  codebase_context += f"\n--- Analytics Keys Reference: ---\n" + f.read()
+
           for c_file in candidate_files[:10]:
               with open(c_file, 'r', encoding='utf-8') as f:
                   codebase_context += f"\n--- Target Candidate File: {c_file} ---\n" + f.read()

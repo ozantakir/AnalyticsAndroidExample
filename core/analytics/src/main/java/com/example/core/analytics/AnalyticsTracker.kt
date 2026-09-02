@@ -2,6 +2,10 @@ package com.example.core.analytics
 
 import android.content.Context
 import android.util.Log
+import com.example.core.analytics.store.AnalyticsStore
+import com.example.core.analytics.destination.AdjustEvent
+import com.example.core.analytics.destination.FirebaseEvent
+import com.example.core.analytics.destination.InsiderEvent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,7 +28,8 @@ interface AnalyticsTracker {
 
 @Singleton
 class AnalyticsTrackerImpl @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val analyticsStore: AnalyticsStore
 ) : AnalyticsTracker {
 
     private val providers = mutableListOf<() -> Map<String, Any?>>()
@@ -46,6 +51,18 @@ class AnalyticsTrackerImpl @Inject constructor(
             providers.forEach { provider -> putAll(provider()) }
         }
 
+        // 2. Resolve Late-Binding Context Data
+        // Fallback: If no specific keys provided, use all available data from store
+        val referenceData = if (event.contextKeys.isEmpty()) {
+            analyticsStore.getAllData()
+        } else {
+            val data = mutableMapOf<String, Any?>()
+            event.contextKeys.forEach { key ->
+                analyticsStore.getContext(key)?.toMap()?.let { data.putAll(it) }
+            }
+            data
+        }
+
         val targets = if (event.destinations.contains(AnalyticsDestination.ALL)) {
             AnalyticsDestination.entries.filter { it != AnalyticsDestination.ALL }
         } else {
@@ -53,11 +70,17 @@ class AnalyticsTrackerImpl @Inject constructor(
         }
 
         targets.forEach { destination ->
-            val eventParams = event.getMappedParameters(destination)
+            val eventParams = when (destination) {
+                AnalyticsDestination.FIREBASE -> (event as? FirebaseEvent)?.toFirebaseParams(referenceData)
+                AnalyticsDestination.INSIDER -> (event as? InsiderEvent)?.toInsiderParams(referenceData)
+                AnalyticsDestination.ADJUST -> (event as? AdjustEvent)?.toAdjustParams(referenceData)
+                else -> event.parameters
+            } ?: event.parameters
+
             val contextParams = resolveContextParameters(destination)
 
-            // 2. Hierarchical Merge: Global + Event + Context
-            val finalParams = combinedGlobalParams + eventParams + contextParams
+            // 3. Hierarchical Merge: Global + Reference (Store) + Event + Context (Target-specific)
+            val finalParams = combinedGlobalParams + referenceData + eventParams + contextParams
 
             if (finalParams.containsKey("__action_type")) {
                 dispatchNativeAction(destination, event.eventName, finalParams)

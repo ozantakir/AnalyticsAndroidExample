@@ -2,20 +2,23 @@ package com.example.core.analytics
 
 /**
  * Base model for all analytics events.
- * Follows GEMINI.md multi-destination and parameter mapping rules.
+ * Only contains identity and data reference keys.
  */
 abstract class EventModel {
     abstract val eventName: String
     
-    // Base Raw Schema Parameters (Used for internal logging or SDKs without custom key mapping)
+    /**
+     * Base Raw Schema Parameters (fallback).
+     */
     abstract val parameters: Map<String, Any?>
 
-    // Default to ALL destinations if not specified
-    open val destinations: List<AnalyticsDestination> = listOf(AnalyticsDestination.ALL)
+    /**
+     * Keys to pull data from AnalyticsStore.
+     */
+    open val contextKeys: List<String> = emptyList()
 
     /**
-     * Transforms the event payload for a specific analytics provider.
-     * Use "__action_type" key for native SDK method dispatching.
+     * Optional explicit destinations.
      */
-    abstract fun getMappedParameters(destination: AnalyticsDestination): Map<String, Any?>
+    open val destinations: List<AnalyticsDestination> = listOf(AnalyticsDestination.ALL)
 }

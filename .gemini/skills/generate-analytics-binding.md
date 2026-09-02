@@ -1,6 +1,6 @@
 ### Skill: /generate-analytics-binding
 
-**Goal:** Safely integrate analytics tracking calls into ViewModels, UseCases, or Jetpack Compose UI components using `:core:analytics` module events and `AnalyticsTracker`, supporting multiple destinations (Firebase, Adjust, Insider, etc.), base parameter fallbacks, target-specific context enrichment, and native SDK action dispatching.
+**Goal:** Safely integrate analytics tracking calls into ViewModels, UseCases, or Jetpack Compose UI components using `:core:analytics` module events and `AnalyticsTracker`. Supports late-binding via `AnalyticsStore`, interface-based SDK mapping, and type-safe key management.
 
 ---
 
@@ -8,21 +8,32 @@
 
 1. **Single Entry Point:**
    - Always route tracking calls through `AnalyticsTracker.track(event)`.
-   - Feature modules and UI layers must NEVER import or invoke underlying analytics SDKs directly.
+   - Feature modules must NEVER import or invoke underlying analytics SDKs directly.
+
 2. **Where to Trigger:**
-   - **User Actions (Click, Scroll, Toggle):** Trigger from ViewModel functions handling user intents OR directly inside Compose event lambdas (e.g., `onClick = { ... }`).
-   - **Screen Impression / Page View:** Trigger inside a Compose `LaunchedEffect(Unit)` block when the screen first renders.
-   - **State-Driven Events (Success/Failure):** Trigger inside ViewModel coroutine flows when a state transition succeeds or fails.
-3. **Multi-Destination & Action Handling:**
-   - **Target Routing:** Events must explicitly list their targets using `AnalyticsDestination` (e.g., `FIREBASE`, `ADJUST`, `INSIDER`, `FACEBOOK`).
-   - **Base Parameter Map (`parameters`):** Store raw schema key-value pairs in `override val parameters: Map<String, Any?>`. Use this as the base payload for internal logging (Logcat, Crashlytics) or for SDKs that accept raw schema parameters without renaming.
-   - **SDK-Specific Parameter Mapping:** Define explicit `when` branches inside `getMappedParameters()` only for SDKs requiring rigid key conventions (e.g., Firebase `item_id`, Adjust `revenue`).
-   - **Fallback Mechanism:** `getMappedParameters()` must always end with `else -> parameters` so SDKs without custom transformation rules automatically receive the base parameter map.
-   - **Native Action Keys:** If a target requires a strongly-typed native method call (e.g., Insider's `cart.add()`, Facebook's `logPurchase()`), pass internal action flags (e.g., `"__action_type" to "CART_ADD"`) so `AnalyticsTracker` can invoke the native SDK method.
-4. **Global & Target-Specific Context Isolation:**
-   - **Global & Dynamic Parameters:** Never pass common or runtime-changing parameters (e.g., `user_id` on login, `locale` on language switch, `app_version`) into individual `EventModel` constructors or UI callers.
-   - **Dynamic Provider Injection:** Inject or update these parameters at the `AnalyticsTracker` layer using `AnalyticsTracker.setProviders(...)` or `AnalyticsTracker.updateGlobalParameters(...)` whenever state changes (e.g., Auth state, App launch, Settings update). They are dynamically resolved at dispatch time.
-5. **Thread Safety:** Analytics tracking calls must be non-blocking and safe to call on any thread or coroutine context.
+   - **User Actions:** Trigger from ViewModel functions or Compose event lambdas.
+   - **Screen Impressions:** Use `LaunchedEffect(Unit)` in Compose.
+   - **State-Driven Events:** Trigger during ViewModel state transitions (Success/Failure).
+
+3. **Interface-Based SDK Mapping (Crucial):**
+   - Events should NOT use a monolithic mapping method.
+   - Implement SDK-specific interfaces from `:core:analytics:destination`:
+     - `FirebaseEvent` -> `toFirebaseParams(referenceData: Map<String, Any?>)`
+     - `InsiderEvent` -> `toInsiderParams(referenceData: Map<String, Any?>)`
+     - `AdjustEvent` -> `toAdjustParams(referenceData: Map<String, Any?>)`
+   - Always use the `referenceData` passed to these methods to access late-bound parameters.
+
+4. **Late-Binding & AnalyticsStore:**
+   - Use `contextKeys: List<String>` in `EventModel` to request data from `AnalyticsStore`.
+   - Centralize all keys in `AnalyticsKeys` object (e.g., `AnalyticsKeys.PRODUCT_DETAILS`).
+   - Use `AnalyticsDataManager.ingest()` or `ingestJson()` in ViewModels to store data before tracking.
+
+5. **Hierarchical Merging Logic:**
+   - `AnalyticsTracker` automatically merges:
+     1. Global Parameters (Auth state, etc.)
+     2. Reference Data (from Store via `contextKeys`)
+     3. Event Parameters (from SDK interfaces)
+     4. Target-specific Context (OS version, Locale, etc.)
 
 ---
 
@@ -35,73 +46,52 @@ package com.example.core.analytics.generated
 
 import com.example.core.analytics.AnalyticsDestination
 import com.example.core.analytics.EventModel
+import com.example.core.analytics.AnalyticsKeys
+import com.example.core.analytics.destination.*
 
 data class AddToCartClickedEvent(
-    val productId: String,
-    val price: Double,
-    val quantity: Int,
-    val category: String? = null
-) : EventModel() {
+    val quantity: Int
+) : EventModel(), FirebaseEvent, InsiderEvent {
 
     override val eventName: String = "add_to_cart_clicked"
 
-    // Multi-Destination Declaration
+    // Request late-binding data from Store
+    override val contextKeys: List<String> = listOf(AnalyticsKeys.PRODUCT_DETAILS)
+
     override val destinations: List<AnalyticsDestination> = listOf(
         AnalyticsDestination.FIREBASE,
-        AnalyticsDestination.ADJUST,
         AnalyticsDestination.INSIDER
     )
 
-    // Base Raw Schema Parameters (Used for internal logging or SDKs without custom key mapping)
-    override val parameters: Map<String, Any?> = mapOf(
-        "productId" to productId,
-        "price" to price,
-        "quantity" to quantity,
-        "category" to category
-    )
+    override val parameters: Map<String, Any?> = mapOf("quantity" to quantity)
 
-    override fun getMappedParameters(destination: AnalyticsDestination): Map<String, Any?> {
-        return when (destination) {
-            // SDKs requiring custom key transformations
-            AnalyticsDestination.FIREBASE -> mapOf(
-                "item_id" to productId,
-                "value" to price,
-                "quantity" to quantity,
-                "item_category" to category
-            )
-            AnalyticsDestination.ADJUST -> mapOf(
-                "revenue" to price
-            )
-            AnalyticsDestination.INSIDER -> mapOf(
-                // Action flag for native SDK method execution
-                "__action_type" to "CART_ADD",
-                "product_id" to productId,
-                "price" to price,
-                "quantity" to quantity
-            )
-            // SDKs accepting raw schema keys fall back to standard parameters
-            else -> parameters
-        }
-    }
-}
-
-#### 2. Usage Examples in UI Layer
-
-// Compose Screen Impression
-@Composable
-fun ProductDetailScreen(...) {
-    LaunchedEffect(Unit) {
-        AnalyticsTracker.track(ProductDetailScreenViewedEvent())
-    }
-}
-
-// ViewModel Action Trigger
-fun onAddToCartClicked(product: Product) {
-    AnalyticsTracker.track(
-        AddToCartClickedEvent(
-            productId = product.id,
-            price = product.price,
-            quantity = 1
+    override fun toFirebaseParams(referenceData: Map<String, Any?>): Map<String, Any?> {
+        return mapOf(
+            "item_id" to referenceData["p_id"],
+            "value" to referenceData["p_price"],
+            "quantity" to quantity
         )
-    )
+    }
+
+    override fun toInsiderParams(referenceData: Map<String, Any?>): Map<String, Any?> {
+        return mapOf(
+            "__action_type" to "CART_ADD",
+            "product_name" to referenceData["p_name"]
+        )
+    }
 }
+```
+
+#### 2. Data Ingestion in ViewModel
+
+```kotlin
+// Ingesting data before tracking
+analyticsDataManager.ingest(
+    data = product,
+    transformer = ProductDomainTransformer(),
+    key = AnalyticsKeys.PRODUCT_DETAILS
+)
+
+// Tracking the event
+analyticsTracker.track(AddToCartClickedEvent(quantity = 1))
+```

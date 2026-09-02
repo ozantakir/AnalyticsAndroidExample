@@ -2,9 +2,12 @@ package com.example.feature.product.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.core.analytics.AnalyticsKeys
 import com.example.core.analytics.AnalyticsTracker
 import com.example.core.analytics.generated.AddToCartClickedEvent
 import com.example.core.analytics.generated.ProductViewEvent
+import com.example.core.analytics.manager.AnalyticsDataManager
+import com.example.core.analytics.transformer.ProductDomainTransformer
 import com.example.core.domain.model.Product
 import com.example.core.domain.usecase.GetProductUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -21,7 +24,8 @@ sealed interface ProductUiState {
 @HiltViewModel
 class ProductViewModel @Inject constructor(
     private val getProductUseCase: GetProductUseCase,
-    private val analyticsTracker: AnalyticsTracker
+    private val analyticsTracker: AnalyticsTracker,
+    private val analyticsDataManager: AnalyticsDataManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ProductUiState>(ProductUiState.Loading)
@@ -34,6 +38,12 @@ class ProductViewModel @Inject constructor(
                 .catch { e -> _uiState.value = ProductUiState.Error(e.message ?: "Unknown Error") }
                 .collect { product ->
                     _uiState.value = ProductUiState.Success(product)
+                    
+                    // 1. Veriyi "product_details" referans anahtarıyla store'a kaydediyoruz.
+                    // Transformer içindeki modifikasyonlar (segment, sale durumu vb.) burada yapılır.
+                    analyticsDataManager.ingest(product, ProductDomainTransformer(), AnalyticsKeys.PRODUCT_DETAILS)
+
+                    // 2. Track event
                     trackProductView(product)
                 }
         }
@@ -48,11 +58,12 @@ class ProductViewModel @Inject constructor(
     }
 
     fun onAddToCartClicked(product: Product) {
-        // Handle add to cart logic
+        // Artik 'price' gibi değerleri elle geçmiyoruz.
+        // AddToCartClickedEvent içindeki 'contextKey = "product_details"' sayesinde 
+        // bu değerler Store'dan otomatik olarak (late-binding) çekilecek.
         analyticsTracker.track(
             AddToCartClickedEvent(
                 productId = product.id,
-                price = product.price,
                 quantity = 1
             )
         )
